@@ -1,0 +1,1827 @@
+---
+title: "Dividing Seasons"
+author: "Farid Musayev"
+date: "2025-03-16"
+output: html_document
+---
+
+Calling Necessary libraries
+```{r setup, include=FALSE}
+library(SlidingWindowReg)
+library(lubridate)
+```
+
+Importing Data
+```{r}
+df_1344 <- get(load('C:/Users/99451/Desktop/Thesis/1344.Rdata'))
+df_2152 <- get(load('C:/Users/99451/Desktop/Thesis/2152.Rdata'))
+df_2183 <- get(load('C:/Users/99451/Desktop/Thesis/2183.Rdata'))
+seasons <- read.csv('C:/Users/99451/Desktop/Thesis/SeasonData/Aggregated_Months_Growing_Dormancy_Probability.csv')
+```
+
+Initializing seed and getting seasons for each df
+
+```{r}
+set.seed(42)
+seasons_1344 <- subset(seasons, gridcode == 1344)
+seasons_2152 <- subset(seasons, gridcode == 2152)
+seasons_2183 <- subset(seasons, gridcode == 2183)
+```
+
+Adding New Column for Raining Seasons (if raining -> 1, if not -> 0)
+
+```{r}
+# Create a vector of binary values (1 if dormancy < 0, else 0) for each month
+binary_1344 <- ifelse(seasons_1344[1, -1] < 0, 1, 0)
+binary_2152 <- ifelse(seasons_2152[1, -1] < 0, 1, 0)
+binary_2183 <- ifelse(seasons_2183[1, -1] < 0, 1, 0)
+
+# Name the elements of the vector with the corresponding month names
+names(binary_1344) <- names(seasons_1344)[-1]
+names(binary_2152) <- names(seasons_2152)[-1]
+names(binary_2183) <- names(seasons_2183)[-1]
+
+# Extract month abbreviations
+df_1344$month <- format(df_1344$date, "%b")
+df_2152$month <- format(df_2152$date, "%b")
+df_2183$month <- format(df_2183$date, "%b")
+
+# Creating seasonal binary (0/1) columns
+df_1344$seasonal <- binary_1344[df_1344$month]
+df_2152$seasonal <- binary_2152[df_2152$month]
+df_2183$seasonal <- binary_2183[df_2183$month]
+
+# Dividing dataset into raining (1) and non-raining seasons
+raining_1344 <- df_1344[df_1344$seasonal == 1, ]
+nonraining_1344 <- df_1344[df_1344$seasonal == 0, ]
+raining_2152 <- df_2152[df_2152$seasonal == 1, ]
+nonraining_2152 <- df_2152[df_2152$seasonal == 0, ]
+raining_2183 <- df_2183[df_2183$seasonal == 1, ]
+nonraining_2183 <- df_2183[df_2183$seasonal == 0, ]
+```
+
+Separating to training and testing sets
+```{r}
+# List of dataset names
+dataset_names <- c("raining_1344", "nonraining_1344", "raining_2152", "nonraining_2152", "raining_2183", "nonraining_2183")
+
+# Create lists to store train and test datasets
+train_dfs <- list()
+test_dfs <- list()
+
+# Loop through each dataset name and split into train & test
+for (name in dataset_names) {
+  df <- get(name)  # Get dataset from environment
+  
+  # Split into train (hydr_year <= 30) and test (hydr_year > 30)
+  train_dfs[[name]] <- df[df$hydr_year <= 30, ]
+  test_dfs[[name]] <- df[df$hydr_year > 30, ]
+}
+```
+
+Training the Models
+
+```{r}
+set.seed(42) #seeting seed once more before training
+# Create a list to store models
+models <- list()
+
+# Loop through each dataset and train the model
+for (name in dataset_names) {
+  train_df <- train_dfs[[name]]  # Get the train dataset
+
+  # Train the model
+  models[[name]] <- trainSWR(train_df$rain,
+                             train_df$gauge,
+                             iter = 3,
+                             param_selection = "best_bic")
+}
+```
+
+Checking the Metrics
+
+```{r}
+print(models$raining_1344$param)
+print(models$nonraining_1344$param)
+print(models$raining_2152$param)
+print(models$nonraining_2152$param)
+print(models$raining_2183$param)
+print(models$nonraining_2183$param)
+```
+
+```{r}
+pred_rain1344 <- predict(models$raining_1344, 
+                        newdata = test_dfs$raining_1344$rain)
+pred_nonrain1344 <- predict(models$nonraining_1344, 
+                        newdata = test_dfs$nonraining_1344$rain)
+print(eval_all(pred_rain1344, test_dfs$raining_1344$gauge))
+print(eval_all(pred_nonrain1344, test_dfs$nonraining_1344$gauge))
+
+pred_rain2152 <- predict(models$raining_2152, 
+                        newdata = test_dfs$raining_2152$rain)
+pred_nonrain2152 <- predict(models$nonraining_2152, 
+                        newdata = test_dfs$nonraining_2152$rain)
+print(eval_all(pred_rain2152, test_dfs$raining_2152$gauge))
+print(eval_all(pred_nonrain2152, test_dfs$nonraining_2152$gauge))
+
+pred_rain2183 <- predict(models$raining_2183, 
+                        newdata = test_dfs$raining_2183$rain)
+pred_nonrain2183 <- predict(models$nonraining_2183, 
+                        newdata = test_dfs$nonraining_2183$rain)
+print(eval_all(pred_rain2183, test_dfs$raining_2183$gauge))
+print(eval_all(pred_nonrain2183, test_dfs$nonraining_2183$gauge))
+```
+
+Plotting the predictions
+
+```{r}
+plot(models$raining_1344, 
+     type = "prediction",
+     reference = test_dfs$raining_1344$gauge,
+     newdata = test_dfs$raining_1344$rain)
+plot(models$nonraining_1344, 
+     type = "prediction",
+     reference = test_dfs$nonraining_1344$gauge,
+     newdata = test_dfs$nonraining_1344$rain)
+
+plot(models$raining_2152, 
+     type = "prediction",
+     reference = test_dfs$raining_2152$gauge,
+     newdata = test_dfs$raining_2152$rain)
+plot(models$nonraining_2152, 
+     type = "prediction",
+     reference = test_dfs$nonraining_2152$gauge,
+     newdata = test_dfs$nonraining_2152$rain)
+
+plot(models$raining_2183, 
+     type = "prediction",
+     reference = test_dfs$raining_2183$gauge,
+     newdata = test_dfs$raining_2183$rain)
+plot(models$nonraining_2183, 
+     type = "prediction",
+     reference = test_dfs$nonraining_2183$gauge,
+     newdata = test_dfs$nonraining_2183$rain)
+```
+
+Writing Function to calculate Kullback-Leibler divergence
+
+```{r}
+# Helper function: Compute KL divergence between two vectors P and Q.
+compute_kl_divergence <- function(P, Q, epsilon = 1e-10) {
+  max_len <- max(length(P), length(Q))
+  P <- c(rep(0, max_len - length(P)), P)
+  Q <- c(rep(0, max_len - length(Q)), Q)
+  
+  # Normalize
+  if (sum(P) > 0) P <- P / sum(P)
+  if (sum(Q) > 0) Q <- Q / sum(Q)
+  
+  # Only compute over P > 0
+  nonzero_idx <- which(P > 0)
+  Pnz <- P[nonzero_idx]
+  Qnz <- Q[nonzero_idx]
+  
+  # Smooth Q only
+  Qnz <- ifelse(Qnz == 0, epsilon, Qnz)
+  
+  divergence <- sum(Pnz * log(Pnz / Qnz))
+  divergence <- pmax(divergence, 0)
+  
+  return(divergence)
+}
+```
+
+
+Checking watersheds with similar geographic regions
+
+```{r}
+df_639 <- get(load('C:/Users/99451/Desktop/Thesis/WatershedData/639.Rdata')) #1344
+df_2153 <- get(load('C:/Users/99451/Desktop/Thesis/WatershedData/2153.Rdata')) #2152
+df_2273 <- get(load('C:/Users/99451/Desktop/Thesis/WatershedData/2273.Rdata')) #2183
+```
+
+Creating training indexes and training models
+
+```{r}
+train_model <- function(data, filter_col, threshold, iter = 3, param_selection = "best_bic") {
+  # Get indices where filter_col <= threshold
+  train_inds <- which(data[[filter_col]] <= threshold)
+  
+  # Train the model
+  model <- trainSWR(data$rain[train_inds], data$gauge[train_inds], 
+                    iter = iter, param_selection = param_selection)
+  return(model)
+}
+
+set.seed(42)
+model_639 <- train_model(df_639, "hydr_year", 30)
+model_2153 <- train_model(df_2153, "hydr_year", 30)
+model_2273 <- train_model(df_2273, "hydr_year", 30)
+```
+
+
+Checking Predictive Performance
+
+```{r}
+test_inds_639 <- which(df_639$hydr_year > 30)
+test_inds_2153 <- which(df_2153$hydr_year > 30)
+test_inds_2273 <- which(df_2273$hydr_year > 30)
+
+results_639 <- predict(model_639, newdata = df_639$rain[test_inds_639])
+results_2153 <- predict(model_2153, newdata = df_2153$rain[test_inds_2153])
+results_2273 <- predict(model_2273, newdata = df_2273$rain[test_inds_2273])
+
+# Function to extract and convert list values to a numeric vector
+extract_metrics <- function(metrics_list) {
+  # Extract values from the list (assuming `metrics_list` contains named elements)
+  return(unlist(metrics_list))
+}
+
+# Extract model metrics as numeric vectors
+model1_metrics <- extract_metrics(eval_all(results_639, df_639$gauge[test_inds_639]))
+model2_metrics <- extract_metrics(eval_all(results_2153, df_2153$gauge[test_inds_2153]))
+model3_metrics <- extract_metrics(eval_all(results_2273, df_2273$gauge[test_inds_2273]))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(model1_metrics))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(model2_metrics))
+df3 <- as.data.frame(t(model3_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(model1_metrics)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+
+# Add Model names
+df1$Model <- "639"
+df2$Model <- "2153"
+df3$Model <- "2273"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df2, df3)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+Adding vegetation values for the dataframes and using spline interpolation
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(lubridate)
+
+# --- Step 1: Ensure the date column is of Date class ---
+df_1344$date <- as.Date(df_1344$date)
+
+# Create a lookup vector from the seasonal values, excluding the gridcode column.
+# This produces a named vector with names like "Jan", "Feb", etc.
+season_lookup <- unlist(seasons_1344[ , setdiff(names(seasons), "gridcode")])
+
+# --- Step 3: Create new columns to extract the day of the month and month abbreviation ---
+# Use one mutate call to add these helper columns.
+df_1344 <- df_1344 %>%
+  mutate(day = day(date),
+         month_abbr = format(date, "%b"))
+
+# --- Step 4: Add a new column (seasonal_value) that has the seasonal factor only on the 15th ---
+# Here we use our lookup vector. For each row where day == 15, we get the value from season_lookup.
+df_1344 <- df_1344 %>%
+  mutate(seasonal_value = if_else(day == 15,
+                                  as.numeric(season_lookup[month_abbr]),
+                                  NA_real_))
+
+# --- Step 5: Spline Interpolation to fill in NA values for seasonal_value ---
+# Convert the date to numeric for interpolation
+numeric_dates <- as.numeric(df_1344$date)
+
+# Identify the known points (only the 15th days)
+x_known <- numeric_dates[!is.na(df_1344$seasonal_value)]
+y_known <- df_1344$seasonal_value[!is.na(df_1344$seasonal_value)]
+
+# Perform spline interpolation across all dates
+spline_result <- spline(x = x_known,
+                        y = y_known,
+                        xout = numeric_dates)
+
+# Add the interpolated seasonal values as a new column
+df_1344$seasonal_value_filled <- spline_result$y
+
+# (Optional) Remove helper columns if not needed
+df_1344 <- df_1344 %>% select(-day, -month_abbr)
+
+# View the first few rows of the updated data frame
+head(df_1344)
+```
+
+Plotting seasonal_value_filled for 1st hydr_year only
+
+```{r}
+df_filtered <- subset(df_1344, hydr_year == 1)
+
+plot(df_filtered$date, df_filtered$seasonal_value_filled, type = "l", 
+     xlab = "Date", ylab = "Rainfall", 
+     main = "Vegetation over Time (Hydr Year = 1)")
+```
+
+Normalizing seasonal_value_filled column between 0 and 1
+
+```{r}
+normalize <- function(x) {
+  rng <- range(x, na.rm = TRUE)  # get range without NA
+  (x - rng[1]) / (rng[2] - rng[1])
+}
+
+df_1344$seasonal_value_norm <- normalize(df_1344$seasonal_value_filled)
+
+df_filtered_norm <- subset(df_1344, hydr_year == 1)
+
+plot(df_filtered_norm$date, df_filtered_norm$seasonal_value_norm, type = "l",
+     xlab = "Date", ylab = "Normalized Seasonal Value",
+     main = "Normalized Vegetation over Time (Hydr Year = 1)")
+```
+
+Dividing df_1344 to low < (-0.95) and high > (0.95) dataframes
+
+```{r}
+# Data points where original value < -0.95
+df_low <- subset(df_1344, seasonal_value_filled <= -0.95)
+
+# Data points where original value > 0.95
+df_high <- subset(df_1344, seasonal_value_filled >= 0.95)
+```
+
+
+Dividing to train and test split and training models and getting relevant metrics
+
+```{r}
+model_high <- train_model(df_high, "hydr_year", 30)
+model_low <- train_model(df_low, "hydr_year", 30)
+summary(model_high)
+summary(model_low)
+```
+
+
+Writing the model metrics
+
+```{r}
+test_inds_high <- which(df_high$hydr_year > 30)
+test_inds_low <- which(df_low$hydr_year > 30)
+
+results_high <- predict(model_high, newdata = df_high$rain[test_inds_high])
+results_low <- predict(model_low, newdata = df_low$rain[test_inds_low])
+
+# Function to extract and convert list values to a numeric vector
+extract_metrics <- function(metrics_list) {
+  # Extract values from the list (assuming `metrics_list` contains named elements)
+  return(unlist(metrics_list))
+}
+
+# Extract model metrics as numeric vectors
+model1_metrics <- extract_metrics(eval_all(results_high, df_high$gauge[test_inds_high]))
+model2_metrics <- extract_metrics(eval_all(results_low, df_low$gauge[test_inds_low]))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(model1_metrics))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(model2_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(model1_metrics)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+
+# Add Model names
+df1$Model <- "High Model"
+df2$Model <- "Low Model"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df2)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+```{r}
+plot(model_high, 
+     type = "prediction",
+     reference = df_high$gauge[test_inds_high],
+     newdata = df_high$rain[test_inds_high])
+
+plot(model_low, 
+     type = "prediction",
+     reference = df_low$gauge[test_inds_low],
+     newdata = df_low$rain[test_inds_low])
+```
+
+Doing all same for Watershed 2152 because of triple kernel problem
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(lubridate)
+
+# --- Step 1: Ensure the date column is of Date class ---
+df_2183$date <- as.Date(df_2183$date)
+df_2152$date <- as.Date(df_2152$date)
+
+# Create a lookup vector from the seasonal values, excluding the gridcode column.
+# This produces a named vector with names like "Jan", "Feb", etc.
+season_lookup <- unlist(seasons_2183[ , setdiff(names(seasons), "gridcode")])
+
+# --- Step 3: Create new columns to extract the day of the month and month abbreviation ---
+# Use one mutate call to add these helper columns.
+df_2183 <- df_2183 %>%
+  mutate(day = day(date),
+         month_abbr = format(date, "%b"))
+
+# --- Step 4: Add a new column (seasonal_value) that has the seasonal factor only on the 15th ---
+# Here we use our lookup vector. For each row where day == 15, we get the value from season_lookup.
+df_2183 <- df_2183 %>%
+  mutate(seasonal_value = if_else(day == 15,
+                                  as.numeric(season_lookup[month_abbr]),
+                                  NA_real_))
+
+season_lookup <- unlist(seasons_2152[ , setdiff(names(seasons), "gridcode")])
+df_2152 <- df_2152 %>%
+  mutate(day = day(date),
+         month_abbr = format(date, "%b"))
+df_2152 <- df_2152 %>%
+  mutate(seasonal_value = if_else(day == 15,
+                                  as.numeric(season_lookup[month_abbr]),
+                                  NA_real_))
+
+# --- Step 5: Spline Interpolation to fill in NA values for seasonal_value ---
+# Convert the date to numeric for interpolation
+numeric_dates <- as.numeric(df_2183$date)
+
+# Identify the known points (only the 15th days)
+x_known <- numeric_dates[!is.na(df_2183$seasonal_value)]
+y_known <- df_2183$seasonal_value[!is.na(df_2183$seasonal_value)]
+
+# Perform spline interpolation across all dates
+spline_result <- spline(x = x_known,
+                        y = y_known,
+                        xout = numeric_dates)
+
+# Add the interpolated seasonal values as a new column
+df_2183$seasonal_value_filled <- spline_result$y
+
+# (Optional) Remove helper columns if not needed
+df_2183 <- df_2183 %>% select(-day, -month_abbr)
+
+# View the first few rows of the updated data frame
+head(df_2183)
+
+#for 2152
+numeric_dates <- as.numeric(df_2152$date)
+x_known <- numeric_dates[!is.na(df_2152$seasonal_value)]
+y_known <- df_2152$seasonal_value[!is.na(df_2152$seasonal_value)]
+spline_result <- spline(x = x_known,
+                        y = y_known,
+                        xout = numeric_dates)
+df_2152$seasonal_value_filled <- spline_result$y
+df_2152 <- df_2152 %>% select(-day, -month_abbr)
+
+df_filtered <- subset(df_2183, hydr_year == 1)
+
+plot(df_filtered$date, df_filtered$seasonal_value_filled, type = "l", 
+     xlab = "Date", ylab = "Rainfall", 
+     main = "Vegetation over Time (Hydr Year = 1)")
+
+df_2183$seasonal_value_norm <- normalize(df_2183$seasonal_value_filled)
+df_2152$seasonal_value_norm <- normalize(df_2152$seasonal_value_filled)
+
+df_filtered_norm <- subset(df_2183, hydr_year == 1)
+
+plot(df_filtered_norm$date, df_filtered_norm$seasonal_value_norm, type = "l",
+     xlab = "Date", ylab = "Normalized Seasonal Value",
+     main = "Normalized Vegetation over Time (Hydr Year = 1)")
+```
+
+Dividing to high and low datasets and modelling
+
+```{r}
+# Data points where original value < -0.95
+df_low_2183 <- subset(df_2183, seasonal_value_filled <= -0.95)
+
+# Data points where original value > 0.95
+df_high_2183 <- subset(df_2183, seasonal_value_filled >= 0.95)
+
+model_high_2183 <- train_model(df_high_2183, "hydr_year", 30)
+model_low_2183 <- train_model(df_low_2183, "hydr_year", 30)
+summary(model_high_2183)
+summary(model_low_2183)
+```
+
+Returning to 1344 for calculations
+
+```{r}
+plot(model_high, include_text = FALSE)
+plot(model_low, include_text = FALSE)
+
+# Suppose coefs1 and coefs2 are matrices with kernel rows:
+coefs1 <- coef(model_high)  # your first model coefficients
+coefs2 <- coef(model_low)  # your second model coefficients
+
+result <- compare_models_kld(coefs1, coefs2)
+print(result$divergence_matrix) # All pairwise KL divergence values
+print(result$min_values)
+```
+
+Creating kernel builder function for specified kernel of the models using params from params_history
+
+```{r}
+build_kernels <- function(model, kernel = 3, weighted = TRUE) {
+  # 1. Compute each raw kernel
+  kern_list <- SlidingWindowReg:::get_kernel(model$param_hist[[kernel]]$param,
+                                             model$param_hist[[kernel]]$mix,
+                                             weighted = weighted)
+  return(kern_list)
+}
+```
+
+Building and visualising kernels
+
+```{r}
+library(ggplot2)
+library(reshape2)
+
+# Assume H is a matrix with row names = kernels, colnames = time
+H <- build_kernels(model_high, kernel = 2)
+
+# Example: fix column names to range from -n to 0
+time_range <- seq(-ncol(H) + 1, 0)
+colnames(H) <- as.character(time_range)
+
+# Convert matrix to data frame while preserving row names
+df <- as.data.frame(H)
+df$window <- rownames(df)
+
+# Melt to long format (make sure all columns except `window` are treated as time)
+df_long <- melt(df, id.vars = "window", variable.name = "time", value.name = "x")
+
+# Convert time to numeric, suppressing warnings
+df_long$time <- suppressWarnings(as.numeric(as.character(df_long$time)))
+
+# Remove rows where conversion failed (non-numeric time)
+df_long <- df_long[!is.na(df_long$time), ]
+
+#Visualizing the Plots
+ggplot(df_long, aes(x = time, y = x, color = factor(window))) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 2.5) +
+  geom_vline(xintercept = 0, linetype = "dotted", linewidth = 1) +
+  scale_x_continuous(breaks = seq(min(df_long$time), max(df_long$time), by = 5)) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(title = "Build Kernel High Model: kernels = 2",x = "time", y = "x", color = "window") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 10, face = "bold"),
+    legend.text = element_text(size = 9),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.minor = element_blank()
+  )
+plot(model_high, include_text = FALSE)
+
+# Assuming your matrix is L (as before)
+L <- build_kernels(model_low, 2)
+
+# Example: fix column names to range from -n to 0
+time_range <- seq(-ncol(L) + 1, 0)
+colnames(L) <- as.character(time_range)
+
+# Convert matrix to data frame while preserving row names
+df <- as.data.frame(L)
+df$window <- rownames(df)
+
+# Melt to long format (make sure all columns except `window` are treated as time)
+df_long <- melt(df, id.vars = "window", variable.name = "time", value.name = "x")
+
+# Convert time to numeric, suppressing warnings
+df_long$time <- suppressWarnings(as.numeric(as.character(df_long$time)))
+
+# Remove rows where conversion failed (non-numeric time)
+df_long <- df_long[!is.na(df_long$time), ]
+
+# Plot with customizations
+ggplot(df_long, aes(x = time, y = x, color = factor(window))) +
+  geom_line(linewidth = 1.3) +
+  geom_point(size = 2.5) +
+  geom_vline(xintercept = 0, linetype = "dotted", linewidth = 1) +
+  scale_x_continuous(breaks = pretty(df_long$time, n = 10)) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(title = "Build Kernel Low Model: kernels = 2",x = "time", y = "x", color = "window") +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 10, face = "bold"),
+    legend.text = element_text(size = 9),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.minor = element_blank()
+  )
+plot(model_low, include_text = FALSE)
+```
+
+Modifying KLD Function 
+
+```{r}
+compare_models_kld <- function(model1, model2, n_kernels = 3) {
+  # 1) build the kernel vectors
+  K1 <- build_kernels(model1, kernel = n_kernels)
+  K2 <- build_kernels(model2, kernel = n_kernels)
+
+  # 2) check how many we really have
+  n <- min(nrow(K1), nrow(K2))
+
+  if (n < n_kernels) {
+    warning("Only found ", n, " kernels to compare (requested ", n_kernels, ").")
+  }
+
+  # 3) subset everything to the first n
+  K1 <- K1[1:n, , drop = FALSE]
+  K2 <- K2[1:n, , drop = FALSE]
+  P1 <- model1$param_hist[[n_kernels]]$param
+  P2 <- model2$param_hist[[n_kernels]]$param
+  B1 <- model1$param_hist[[n_kernels]]$mix
+  B2 <- model2$param_hist[[n_kernels]]$mix
+
+  kernels1 <- rownames(K1)
+  kernels2 <- rownames(K2)
+
+  # 4) compute the n×n KL matrix
+  D <- outer(
+    seq_len(n), seq_len(n),
+    Vectorize(function(i, j) compute_kl_divergence(K1[i,], K2[j,]))
+  )
+  dimnames(D) <- list(kernels1, kernels2)
+
+  # 5) best‐matches and reorder model2’s params/mixes(greedy one‐to‐one)
+  best_idx   <- integer(n)
+  taken      <- rep(FALSE, n)
+  for (i in seq_len(n)) {
+    # mask out already‐taken columns
+    d_i <- D[i, ]
+    d_i[taken] <- Inf
+    # pick the closest free kernel
+    j_min <- which.min(d_i)
+    best_idx[i] <- j_min
+    taken[j_min] <- TRUE
+  }
+  
+  P2_matched <- P2[best_idx, , drop = FALSE]
+  B2_matched <- B2[best_idx]
+  
+  # 6) pack side‐by‐side parameter+mix table
+  params <- cbind(
+    delta1 = P1[,1], sigma1 = P1[,2], beta1 = B1,
+    delta2 = P2_matched[,1], sigma2 = P2_matched[,2], beta2 = B2_matched
+  )
+  rownames(params) <- kernels1
+
+  # 7) return everything
+  list(
+    divergence_matrix = D,
+    best_matches       = kernels2[best_idx],
+    param_matrix       = params
+  )
+}
+
+divergence_matrix <- compare_models_kld_updated(model_high, model_low, 3)
+divergence_matrix
+```
+
+New function to update model params (delta, sigma, beta)
+
+```{r}
+combine_params <- function(param_matrix, alpha = 0.5) {
+  # param_matrix: output$param_matrix from compare_models_kld()
+  # columns must be named delta1, sigma1, beta1, delta2, sigma2, beta2
+  
+  # sanity check:
+  stopifnot(all(c("delta1","sigma1","beta1","delta2","sigma2","beta2")
+                %in% colnames(param_matrix)))
+  stopifnot(alpha >= 0 && alpha <= 1)
+  
+  # compute blended values
+  delta_new <- alpha * param_matrix[,"delta1"] +
+               (1 - alpha) * param_matrix[,"delta2"]
+  sigma_new <- alpha * param_matrix[,"sigma1"] +
+               (1 - alpha) * param_matrix[,"sigma2"]
+  beta_new  <- alpha * param_matrix[,"beta1"]  +
+               (1 - alpha) * param_matrix[,"beta2"]
+  
+  # build output matrix
+  result <- cbind(
+    delta = delta_new,
+    sigma = sigma_new,
+    beta  = beta_new
+  )
+  rownames(result) <- rownames(param_matrix)
+  result
+}
+
+combine_params(divergence_matrix$param_matrix)
+```
+
+Applying the combine_params function to df_high and df_low on seasonal_value_norm columns
+
+```{r}
+# assume divergence_matrix already exists
+pm <- divergence_matrix$param_matrix
+
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df_high$params <- lapply(
+  df_high$seasonal_value_norm,
+  function(a) combine_params(pm, alpha = a)
+)
+
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_low
+df_low$params <- lapply(
+  df_low$seasonal_value_norm,
+  function(a) combine_params(pm, alpha = a)
+)
+```
+
+
+Creating SWR() models for each day in df_high and df_low
+
+```{r}
+# assume df_high$params is your list-column of delta/sigma/beta matrices
+df_high$swr <- lapply(df_high$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_low$swr <- lapply(df_low$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+```
+
+
+Predicting $gauge values upon SWR() model objects
+
+```{r}
+set.seed(42)
+add_new_predictions <- function(df_high) {
+  N <- nrow(df_high)
+
+  if (!is.numeric(df_high$rain) || length(df_high$rain) != N) {
+    stop("`df_high$rain` must be a numeric column of length nrow(df_high).")
+  }
+  if (!is.list(df_high$swr) || length(df_high$swr) != N) {
+    stop("`df_high$swr` must be a list-column of SWR() objects, one per row.")
+  }
+
+  new_pred <- rep(NA_real_, N)
+  highest_covered_idx <- 0L
+  rain_vec <- as.numeric(df_high$rain)
+
+  # Find the first usable end_idx (where start_idx ≥ 1)
+  first_valid_end_idx <- NA_integer_
+
+  for (i in seq_len(N)) {
+    model <- df_high$swr[[i]]
+    window_length <- ncol(coef(model))
+    start_idx <- i - window_length + 1
+
+    if (start_idx >= 1) {
+      first_valid_end_idx <- i
+      break
+    }
+  }
+
+  if (is.na(first_valid_end_idx)) {
+    warning("No usable models found with valid window lengths.")
+    df_high$new_pred <- new_pred
+    return(df_high)
+  }
+
+  # Only start from first usable end_idx
+  for (end_idx in first_valid_end_idx:N) {
+    model <- df_high$swr[[end_idx]]
+    window_length <- ncol(coef(model))
+    start_idx <- end_idx - window_length + 1
+
+    if (start_idx < 1) {
+      next  # Skip again, just in case
+    }
+
+    rain_slice <- rain_vec[start_idx:end_idx]
+    preds_all <- predict(model, newdata = rain_slice)
+
+    global_indices <- seq.int(start_idx, end_idx)
+    is_new <- global_indices > highest_covered_idx
+
+    new_indices <- global_indices[is_new]
+    new_values <- preds_all[is_new]
+
+    new_pred[new_indices] <- new_values
+    highest_covered_idx <- max(highest_covered_idx, end_idx)
+  }
+
+  df_high$new_pred <- new_pred
+  return(df_high)
+}
+
+df_high <- add_new_predictions(df_high)
+df_low <- add_new_predictions(df_low)
+```
+
+
+Checking Model Metrics
+
+```{r}
+test_inds_high <- which(df_high$hydr_year > 30)
+test_inds_low <- which(df_low$hydr_year > 30)
+
+results_high <- predict(model_high, newdata = df_high$rain[test_inds_high])
+results_low <- predict(model_low, newdata = df_low$rain[test_inds_low])
+
+# Function to extract and convert list values to a numeric vector
+extract_metrics <- function(metrics_list) {
+  # Extract values from the list (assuming `metrics_list` contains named elements)
+  return(unlist(metrics_list))
+}
+
+# Extract model metrics as numeric vectors
+model1_metrics <- extract_metrics(eval_all(results_high, df_high$gauge[test_inds_high]))
+model2_metrics <- extract_metrics(eval_all(results_low, df_low$gauge[test_inds_low]))
+
+# Extract model metrics as numeric vectors
+high_test <- subset(df_high, hydr_year > 30)
+low_test <- subset(df_low, hydr_year > 30)
+high_metrics <- extract_metrics(eval_all(high_test$new_pred, high_test$gauge))
+low_metrics <- extract_metrics(eval_all(low_test$new_pred, low_test$gauge))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(high_metrics))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(low_metrics))
+
+df3 <- as.data.frame(t(model1_metrics))  # Transpose to ensure it's a row
+df4 <- as.data.frame(t(model2_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(high_metrics)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+colnames(df4) <- col_names
+
+# Add Model names
+df1$Model <- "High Model Time Pointwise"
+df2$Model <- "Low Model Time Pointwise"
+df3$Model <- "High Model Whole"
+df4$Model <- "Low Model Whole"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df3, df2, df4)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+Plotting Model Predictions
+
+```{r}
+plot(model_high, 
+     type = "prediction",
+     reference = df_high$gauge[test_inds_high],
+     newdata = df_high$rain[test_inds_high])
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+df_high$new_pred[is.na(df_high$new_pred)] <- 0
+
+# Prepare long-format data for plotting
+df_plot <- df_high %>%
+  select(date, gauge, new_pred) %>%
+  pivot_longer(cols = c(gauge, new_pred), names_to = "type", values_to = "value")
+
+# Create the plot
+ggplot(df_plot, aes(x = date, y = value, color = type)) +
+  geom_line(size = 0.8, alpha = 0.9) +
+  scale_color_manual(values = c("gauge" = "gray40", "new_pred" = "darkgreen"),
+                     labels = c("Ground Truth", "Prediction")) +
+  labs(title = "Ground Truth vs Prediction Over Time",
+       x = "Date",
+       y = "Value",
+       color = "") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+plot(model_low, 
+     type = "prediction",
+     reference = df_low$gauge[test_inds_low],
+     newdata = df_low$rain[test_inds_low])
+
+# Prepare long-format data for plotting
+df_plot <- df_low %>%
+  select(date, gauge, new_pred) %>%
+  pivot_longer(cols = c(gauge, new_pred), names_to = "type", values_to = "value")
+
+# Create the plot
+ggplot(df_plot, aes(x = date, y = value, color = type)) +
+  geom_line(size = 0.8, alpha = 0.9) +
+  scale_color_manual(values = c("gauge" = "gray40", "new_pred" = "darkgreen"),
+                     labels = c("Ground Truth", "Prediction")) +
+  labs(title = "Ground Truth vs Prediction Over Time",
+       x = "Date",
+       y = "Value",
+       color = "") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+```
+
+Creating and checking results for entire 1344 Watershed
+
+```{r}
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df_1344$params <- lapply(
+  df_1344$seasonal_value_norm,
+  function(a) combine_params(pm, alpha = a) #pm <- parameter_matrix of df_high and low combined
+)
+
+#creating swr objects from df_1344 parameters
+df_1344$swr <- lapply(df_1344$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_1344 <- add_new_predictions(df_1344)
+
+#Training whole df_1344 vanilla model
+hydr_year <- cumsum(format(sampleWatershed$date, "%d.%m.") == "01.10.") 
+train_inds <- which(hydr_year <= 30)
+
+model_1344 <- trainSWR(df_1344$rain[train_inds],
+                df_1344$gauge[train_inds],
+                iter = 3,
+                param_selection = "best_bic")
+pred_1344 <- predict(model_1344, newdata = df_1344$rain[-train_inds])
+
+# Extract model metrics as numeric vectors
+test_1344 <- subset(df_1344, hydr_year > 30)
+metrics_1344 <- extract_metrics(eval_all(test_1344$new_pred, test_1344$gauge))
+model1344_metrics <- extract_metrics(eval_all(pred_1344, df_1344$gauge[-train_inds]))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(high_metrics))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(low_metrics))
+
+df3 <- as.data.frame(t(metrics_1344))  # Transpose to ensure it's a row
+df4 <- as.data.frame(t(model1344_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(high_metrics)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+colnames(df4) <- col_names
+
+# Add Model names
+df1$Model <- "High Model Time Pointwise 1344"
+df2$Model <- "Low Model Time Pointwise 1344"
+df3$Model <- "Whole Model Time Pointwise 1344"
+df4$Model <- "Whole Model Vanilla 1344"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df2, df3, df4)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+Visualizing plots
+```{r}
+# Prepare long-format data for plotting
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+df_plot <- test_1344 %>%
+  select(date, gauge, new_pred) %>%
+  pivot_longer(cols = c(gauge, new_pred), names_to = "type", values_to = "value")
+
+# Create the plot
+ggplot(df_plot, aes(x = date, y = value, color = type)) +
+  geom_line(size = 0.8, alpha = 0.9) +
+  scale_color_manual(values = c("gauge" = "gray40", "new_pred" = "darkgreen"),
+                     labels = c("Ground Truth", "Prediction")) +
+  labs(title = "Ground Truth vs Prediction Over Time",
+       x = "Date",
+       y = "Value",
+       color = "") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top")
+
+plot(model_1344, 
+     type = "prediction",
+     reference = df_1344$gauge[-train_inds],
+     newdata = df_1344$rain[-train_inds])
+```
+
+
+
+Trying same approaches for df_2152
+```{r}
+set.seed(42)
+# Data points where original value < -0.95
+df2152_low <- subset(df_2152, seasonal_value_filled <= -0.95)
+
+# Data points where original value > 0.95
+df2152_high <- subset(df_2152, seasonal_value_filled >= 0.95)
+
+#Training the models
+model2152_high <- train_model(df2152_high, "hydr_year", 30)
+model2152_low <- train_model(df2152_low, "hydr_year", 30)
+
+summary(model2152_high)
+summary(model2152_low)
+
+divergence_matrix_2152 <- compare_models_kld_updated(model2152_high, model2152_low, 3)
+divergence_matrix_2152
+combine_params(divergence_matrix_2152$param_matrix)
+```
+
+Applying combine param function to high and low models of df_2152
+
+```{r}
+# assume divergence_matrix already exists
+pm_2152 <- divergence_matrix_2152$param_matrix
+
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df2152_high$params <- lapply(
+  df2152_high$seasonal_value_norm,
+  function(a) combine_params(pm_2152, alpha = a)
+)
+
+df2152_low$params <- lapply(
+  df2152_low$seasonal_value_norm,
+  function(a) combine_params(pm_2152, alpha = a)
+)
+
+# Adding SWR objects based on params for each day
+df2152_high$swr <- lapply(df2152_high$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df2152_low$swr <- lapply(df2152_low$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+#Adding new predictions
+df2152_high <- add_new_predictions(df2152_high)
+df2152_low <- add_new_predictions(df2152_low)
+```
+
+
+Checking Model Metrics for 2152
+
+```{r}
+test_inds_high2152 <- which(df2152_high$hydr_year > 30)
+test_inds_low2152 <- which(df2152_low$hydr_year > 30)
+
+results_high2152 <- predict(model2152_high, newdata = df2152_high$rain[test_inds_high2152])
+results_low2152 <- predict(model2152_low, newdata = df2152_low$rain[test_inds_low2152])
+
+# Extract model metrics as numeric vectors
+high2152_metrics <- extract_metrics(eval_all(results_high2152, df2152_high$gauge[test_inds_high2152]))
+low2152_metrics <- extract_metrics(eval_all(results_low2152, df2152_low$gauge[test_inds_low2152]))
+
+# Extract model metrics as numeric vectors
+high_test2152 <- subset(df2152_high, hydr_year > 30)
+low_test2152 <- subset(df2152_low, hydr_year > 30)
+high_metrics2152 <- extract_metrics(eval_all(high_test2152$new_pred, high_test2152$gauge))
+low_metrics2152 <- extract_metrics(eval_all(low_test2152$new_pred, low_test2152$gauge))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(high_metrics2152))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(low_metrics2152))
+
+df3 <- as.data.frame(t(high2152_metrics))  # Transpose to ensure it's a row
+df4 <- as.data.frame(t(low2152_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(high_metrics2152)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+colnames(df4) <- col_names
+
+# Add Model names
+df1$Model <- "High Model Time Pointwise 2152"
+df2$Model <- "Low Model Time Pointwise 2152"
+df3$Model <- "High Model Whole 2152"
+df4$Model <- "Low Model Whole 2152"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df3, df2, df4)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+Checking for whole 2152 Model and testing set
+
+```{r}
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df_2152$params <- lapply(
+  df_2152$seasonal_value_norm,
+  function(a) combine_params(pm_2152, alpha = a) #pm <- parameter_matrix of df_high and low combined
+)
+
+#creating swr objects from df_1344 parameters
+df_2152$swr <- lapply(df_2152$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_2152 <- add_new_predictions(df_2152)
+
+model_2152 <- trainSWR(df_2152$rain[train_inds],
+                df_2152$gauge[train_inds],
+                iter = 3,
+                param_selection = "best_bic")
+pred_2152 <- predict(model_2152, newdata = df_2152$rain[-train_inds])
+
+# Extract model metrics as numeric vectors
+test_2152 <- subset(df_2152, hydr_year > 30)
+metrics_2152 <- extract_metrics(eval_all(test_2152$new_pred, test_2152$gauge))
+model2152_metrics <- extract_metrics(eval_all(pred_2152, df_2152$gauge[-train_inds]))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(high_metrics2152))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(low_metrics2152))
+
+df3 <- as.data.frame(t(metrics_2152))  # Transpose to ensure it's a row
+df4 <- as.data.frame(t(model2152_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(high_metrics2152)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+colnames(df4) <- col_names
+
+# Add Model names
+df1$Model <- "High Model Time Pointwise 2152"
+df2$Model <- "Low Model Time Pointwise 2152"
+df3$Model <- "Whole Model Time Pointwise 2152"
+df4$Model <- "Whole Model Vanilla 2152"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df2, df3, df4)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+Trying same approaches for df_2183
+
+```{r}
+# Data points where original value < -0.95
+df2183_low <- subset(df_2183, seasonal_value_filled <= -0.95)
+
+# Data points where original value > 0.95
+df2183_high <- subset(df_2183, seasonal_value_filled >= 0.95)
+
+#Training the models
+model2183_high <- train_model(df2183_high, "hydr_year", 30)
+model2183_low <- train_model(df2183_low, "hydr_year", 30)
+
+summary(model2183_high)
+summary(model2183_low)
+
+divergence_matrix_2183 <- compare_models_kld_updated(model2183_high, model2183_low, 3)
+divergence_matrix_2183
+combine_params(divergence_matrix_2183$param_matrix)
+```
+Applying combine_param to df_2183
+
+```{r}
+# assume divergence_matrix already exists
+pm_2183 <- divergence_matrix_2183$param_matrix
+
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df2183_high$params <- lapply(
+  df2183_high$seasonal_value_norm,
+  function(a) combine_params(pm_2183, alpha = a)
+)
+
+df2183_low$params <- lapply(
+  df2183_low$seasonal_value_norm,
+  function(a) combine_params(pm_2183, alpha = a)
+)
+
+# Adding SWR objects based on params for each day
+df2183_high$swr <- lapply(df2183_high$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df2183_low$swr <- lapply(df2183_low$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+#Adding new predictions
+df2183_high <- add_new_predictions(df2183_high)
+df2183_low <- add_new_predictions(df2183_low)
+```
+
+
+Checking Model Metrics for 2183
+
+```{r}
+test_inds_high2183 <- which(df2183_high$hydr_year > 30)
+test_inds_low2183 <- which(df2183_low$hydr_year > 30)
+
+results_high2183 <- predict(model2183_high, newdata = df2183_high$rain[test_inds_high2183])
+results_low2183 <- predict(model2183_low, newdata = df2183_low$rain[test_inds_low2183])
+
+# Extract model metrics as numeric vectors
+high2183_metrics <- extract_metrics(eval_all(results_high2183, df2183_high$gauge[test_inds_high2183]))
+low2183_metrics <- extract_metrics(eval_all(results_low2183, df2183_low$gauge[test_inds_low2183]))
+
+# Extract model metrics as numeric vectors
+high_test2183 <- subset(df2183_high, hydr_year > 30)
+low_test2183 <- subset(df2183_low, hydr_year > 30)
+high_metrics2183 <- extract_metrics(eval_all(high_test2183$new_pred, high_test2183$gauge))
+low_metrics2183 <- extract_metrics(eval_all(low_test2183$new_pred, low_test2183$gauge))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(high_metrics2183))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(low_metrics2183))
+
+df3 <- as.data.frame(t(high2183_metrics))  # Transpose to ensure it's a row
+df4 <- as.data.frame(t(low2183_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(high_metrics2183)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+colnames(df4) <- col_names
+
+# Add Model names
+df1$Model <- "High Model Time Pointwise 2183"
+df2$Model <- "Low Model Time Pointwise 2183"
+df3$Model <- "High Model Whole 2183"
+df4$Model <- "Low Model Whole 2183"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df3, df2, df4)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+Checking for Whole 2183 Model
+
+```{r}
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df_2183$params <- lapply(
+  df_2183$seasonal_value_norm,
+  function(a) combine_params(pm_2183, alpha = a) #pm <- parameter_matrix of df_high and low combined
+)
+
+#creating swr objects from df_1344 parameters
+df_2183$swr <- lapply(df_2183$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_2183 <- add_new_predictions(df_2183)
+
+model_2183 <- trainSWR(df_2183$rain[train_inds],
+                df_2183$gauge[train_inds],
+                iter = 3,
+                param_selection = "best_bic")
+pred_2183 <- predict(model_2183, newdata = df_2183$rain[-train_inds])
+
+# Extract model metrics as numeric vectors
+test_2183 <- subset(df_2183, hydr_year > 30)
+metrics_2183 <- extract_metrics(eval_all(test_2183$new_pred, test_2183$gauge))
+model2183_metrics <- extract_metrics(eval_all(pred_2183, df_2183$gauge[-train_inds]))
+
+# Convert the extracted metrics to data frames
+df1 <- as.data.frame(t(high_metrics2183))  # Transpose to ensure it's a row
+df2 <- as.data.frame(t(low_metrics2183))
+
+df3 <- as.data.frame(t(metrics_2183))  # Transpose to ensure it's a row
+df4 <- as.data.frame(t(model2183_metrics))
+
+# Assign column names (assuming that the metric names are consistent)
+col_names <- names(high_metrics2183)
+colnames(df1) <- col_names
+colnames(df2) <- col_names
+colnames(df3) <- col_names
+colnames(df4) <- col_names
+
+# Add Model names
+df1$Model <- "High Model Time Pointwise 2183"
+df2$Model <- "Low Model Time Pointwise 2183"
+df3$Model <- "Whole Model Time Pointwise 2183"
+df4$Model <- "Whole Model Vanilla 2183"
+
+# Combine the results into one table
+metrics_table <- rbind(df1, df2, df3, df4)
+
+# Reorder columns so "Model" comes first
+metrics_table <- metrics_table[, c("Model", setdiff(names(metrics_table), "Model"))]
+
+# Print the final table
+print(metrics_table)
+```
+
+Creating R2 matrix for df_1344
+
+```{r}
+library(dplyr)
+
+df_1344$preds <- NA
+df_1344$preds[df_1344$hydr_year > 30] <- pred_1344
+
+high_indexes_1344 <- df_1344 %>%
+  filter(hydr_year > 30, seasonal_value_filled > 0.95)
+
+low_indexes_1344 <- df_1344 %>%
+  filter(hydr_year > 30, seasonal_value_filled < -0.95)
+
+# Extract model metrics as numeric vectors
+#high_metrics -> high1344     low_metrics-> low1344
+tp1344_high_metrics <- extract_metrics(eval_all(high_indexes_1344$new_pred, 
+                                                        reference = high_indexes_1344$gauge))
+tp1344_low_metrics <- extract_metrics(eval_all(low_indexes_1344$new_pred, 
+                                                        reference = low_indexes_1344$gauge))
+van1344_high_metrics <- extract_metrics(eval_all(high_indexes_1344$preds, 
+                                                        reference = high_indexes_1344$gauge))
+van1344_low_metrics <- extract_metrics(eval_all(low_indexes_1344$preds, 
+                                                        reference = low_indexes_1344$gauge))
+table_data_1344 <- data.frame(
+  Models = c("High Time Pointwise", "Low Time Pointwise", "Whole Time Pointwise", "Vanilla Model 1344"),
+  High_Season = c(high_metrics[["r2"]],"-",tp1344_high_metrics[["r2"]],van1344_high_metrics[["r2"]]),
+  Low_Season = c("-", low_metrics[["r2"]],tp1344_low_metrics[["r2"]],van1344_low_metrics[["r2"]]),
+  Full_Test_Set = c("-", "-", metrics_1344[["r2"]], model1344_metrics[["r2"]]),
+  stringsAsFactors = FALSE
+)
+
+rmse_data_1344 <- data.frame(
+  Models = c("High Time Pointwise", "Low Time Pointwise", "Whole Time Pointwise", "Vanilla Model 1344"),
+  High_Season = c(high_metrics[["rmse"]],"-",tp1344_high_metrics[["rmse"]],
+                  van1344_high_metrics[["rmse"]]),
+  Low_Season = c("-", low_metrics[["rmse"]],tp1344_low_metrics[["rmse"]],van1344_low_metrics[["rmse"]]),
+  Full_Test_Set = c("-", "-", metrics_1344[["rmse"]], model1344_metrics[["rmse"]]),
+  stringsAsFactors = FALSE
+)
+
+print(table_data_1344)
+print(rmse_data_1344)
+```
+
+Visualizing the residuals for df_1344
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+
+# Step 1: Filter and compute residuals
+df_filtered <- df_1344 %>%
+  filter(hydr_year > 30) %>%
+  mutate(
+    date = as.Date(date),  # Ensure proper Date type
+    residual = gauge - new_pred,
+    season_type = case_when(
+      seasonal_value_filled > 0.95 ~ "High",
+      seasonal_value_filled < -0.95 ~ "Low",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Step 2: Plot residuals with seasonal highlights
+ggplot(df_filtered, aes(x = date, y = residual)) +
+  # Highlight high/low seasons
+  geom_rect(data = df_filtered %>% filter(!is.na(season_type)),
+            aes(xmin = date - 0.5, xmax = date + 0.5,
+                ymin = -Inf, ymax = Inf, fill = season_type),
+            inherit.aes = FALSE,
+            alpha = 0.2) +
+  # Line and points for residuals
+  geom_line(color = "black") +
+  geom_point(size = 1) +
+  scale_fill_manual(values = c("High" = "red", "Low" = "blue")) +
+  labs(
+    title = "Residuals Over Time (hydr_year > 30) with Seasonal Highlights",
+    x = "Date",
+    y = "Residual (gauge - new_pred)",
+    fill = "Season Type"
+  ) +
+  theme_minimal()
+
+# Histogram with facets for High/Low/Overall
+df_hist <- df_filtered %>%
+  mutate(season_type = ifelse(is.na(season_type), "Overall", season_type))
+
+# Compute mean and sd per group
+stats <- df_hist %>%
+  group_by(season_type) %>%
+  summarise(
+    mean_res = mean(residual, na.rm = TRUE),
+    sd_res   = sd(residual, na.rm = TRUE)
+  )
+
+ggplot(df_hist, aes(x = residual, fill = season_type)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  facet_wrap(~season_type, scales = "free") +   # free x and y
+  scale_fill_manual(values = c("High" = "red", "Low" = "blue", "Overall" = "gray")) +
+  labs(
+    title = "Histograms of Residuals by Season",
+    x = "Residual",
+    y = "Count"
+  ) +
+  # Add mean ± sd as text
+  geom_text(
+    data = stats,
+    aes(
+      x = mean_res, 
+      y = 0,   # bottom of the plot
+      label = paste0("Mean=", round(mean_res, 2), 
+                     "\nSD=", round(sd_res, 2))
+    ),
+    inherit.aes = FALSE,
+    vjust = -0.5,
+    hjust = 0,
+    size = 3.5,
+    color = "black"
+  ) +
+  theme_minimal()
+```
+
+
+Creating R2 Matrix for df_2152
+
+```{r}
+df_2152$preds <- NA
+df_2152$preds[df_2152$hydr_year > 30] <- pred_2152
+
+high_indexes_2152 <- df_2152 %>%
+  filter(hydr_year > 30, seasonal_value_filled > 0.95)
+
+low_indexes_2152 <- df_2152 %>%
+  filter(hydr_year > 30, seasonal_value_filled < -0.95)
+
+# Extract model metrics as numeric vectors
+#high_metrics -> high1344     low_metrics-> low1344
+tp2152_high_metrics <- extract_metrics(eval_all(high_indexes_2152$new_pred, 
+                                                        reference = high_indexes_2152$gauge))
+tp2152_low_metrics <- extract_metrics(eval_all(low_indexes_2152$new_pred, 
+                                                        reference = low_indexes_2152$gauge))
+van2152_high_metrics <- extract_metrics(eval_all(high_indexes_2152$preds, 
+                                                        reference = high_indexes_2152$gauge))
+van2152_low_metrics <- extract_metrics(eval_all(low_indexes_2152$preds, 
+                                                        reference = low_indexes_2152$gauge))
+table_data_2152 <- data.frame(
+Models = c("High Time Pointwise", "Low Time Pointwise", "Whole Time Pointwise", "Vanilla Model 2152"),
+High_Season = c(high_metrics2152[["r2"]],"-",tp2152_high_metrics[["r2"]],van2152_high_metrics[["r2"]]),
+Low_Season = c("-", low_metrics2152[["r2"]],tp2152_low_metrics[["r2"]],van2152_low_metrics[["r2"]]),
+  Full_Test_Set = c("-", "-", metrics_2152[["r2"]], model2152_metrics[["r2"]]),
+  stringsAsFactors = FALSE
+)
+
+rmse_data_2152 <- data.frame(
+Models = c("High Time Pointwise", "Low Time Pointwise", "Whole Time Pointwise", "Vanilla Model 2152"),
+High_Season = c(high_metrics2152[["rmse"]],"-",tp2152_high_metrics[["rmse"]],van2152_high_metrics[["rmse"]]),
+Low_Season = c("-", low_metrics2152[["rmse"]],tp2152_low_metrics[["rmse"]],van2152_low_metrics[["rmse"]]),
+  Full_Test_Set = c("-", "-", metrics_2152[["rmse"]], model2152_metrics[["rmse"]]),
+  stringsAsFactors = FALSE
+)
+
+print(table_data_2152)
+print(rmse_data_2152)
+```
+
+Visualizing Residuals for df_2152
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Filter and compute residuals
+df_filtered <- df_2152 %>%
+  filter(hydr_year > 30) %>%
+  mutate(
+    date = as.Date(date),  # Ensure proper Date type
+    residual = gauge - new_pred,
+    season_type = case_when(
+      seasonal_value_filled > 0.95 ~ "High",
+      seasonal_value_filled < -0.95 ~ "Low",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Step 2: Plot residuals with seasonal highlights
+ggplot(df_filtered, aes(x = date, y = residual)) +
+  # Highlight high/low seasons
+  geom_rect(data = df_filtered %>% filter(!is.na(season_type)),
+            aes(xmin = date - 0.5, xmax = date + 0.5,
+                ymin = -Inf, ymax = Inf, fill = season_type),
+            inherit.aes = FALSE,
+            alpha = 0.2) +
+  # Line and points for residuals
+  geom_line(color = "black") +
+  geom_point(size = 1) +
+  scale_fill_manual(values = c("High" = "red", "Low" = "blue")) +
+  labs(
+    title = "Residuals Over Time (hydr_year > 30) with Seasonal Highlights",
+    x = "Date",
+    y = "Residual (gauge - new_pred)",
+    fill = "Season Type"
+  ) +
+  theme_minimal()
+
+# Histogram with facets for High/Low/Overall
+df_hist <- df_filtered %>%
+  mutate(season_type = ifelse(is.na(season_type), "Overall", season_type))
+
+# Compute mean and sd per group
+stats <- df_hist %>%
+  group_by(season_type) %>%
+  summarise(
+    mean_res = mean(residual, na.rm = TRUE),
+    sd_res   = sd(residual, na.rm = TRUE)
+  )
+
+ggplot(df_hist, aes(x = residual, fill = season_type)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  facet_wrap(~season_type, scales = "free") +   # free x and y
+  scale_fill_manual(values = c("High" = "red", "Low" = "blue", "Overall" = "gray")) +
+  labs(
+    title = "Histograms of Residuals by Season",
+    x = "Residual",
+    y = "Count"
+  ) +
+  # Add mean ± sd as text
+  geom_text(
+    data = stats,
+    aes(
+      x = mean_res, 
+      y = 0,   # bottom of the plot
+      label = paste0("Mean=", round(mean_res, 2), 
+                     "\nSD=", round(sd_res, 2))
+    ),
+    inherit.aes = FALSE,
+    vjust = -0.5,
+    hjust = 0.6,
+    size = 3.5,
+    color = "black"
+  ) +
+  theme_minimal()
+```
+
+
+Creating R2 Matrix for df_2183
+
+```{r}
+library(dplyr)
+df_2183$preds <- NA
+df_2183$preds[df_2183$hydr_year > 30] <- pred_2183
+
+high_indexes_2183 <- df_2183 %>%
+  filter(hydr_year > 30, seasonal_value_filled > 0.95)
+
+low_indexes_2183 <- df_2183 %>%
+  filter(hydr_year > 30, seasonal_value_filled < -0.95)
+
+# Extract model metrics as numeric vectors
+#high_metrics -> high1344     low_metrics-> low1344
+tp2183_high_metrics <- extract_metrics(eval_all(high_indexes_2183$new_pred, 
+                                                        reference = high_indexes_2183$gauge))
+tp2183_low_metrics <- extract_metrics(eval_all(low_indexes_2183$new_pred, 
+                                                        reference = low_indexes_2183$gauge))
+van2183_high_metrics <- extract_metrics(eval_all(high_indexes_2183$preds, 
+                                                        reference = high_indexes_2183$gauge))
+van2183_low_metrics <- extract_metrics(eval_all(low_indexes_2183$preds, 
+                                                        reference = low_indexes_2183$gauge))
+table_data_2183 <- data.frame(
+Models = c("High Time Pointwise", "Low Time Pointwise", "Whole Time Pointwise", "Vanilla Model 2183"),
+High_Season = c(high_metrics2183[["r2"]],"-",tp2183_high_metrics[["r2"]],van2183_high_metrics[["r2"]]),
+Low_Season = c("-", low_metrics2183[["r2"]],tp2183_low_metrics[["r2"]],van2183_low_metrics[["r2"]]),
+  Full_Test_Set = c("-", "-", metrics_2183[["r2"]], model2183_metrics[["r2"]]),
+  stringsAsFactors = FALSE
+)
+
+rmse_data_2183 <- data.frame(
+Models = c("High Time Pointwise", "Low Time Pointwise", "Whole Time Pointwise", "Vanilla Model 2183"),
+High_Season = c(high_metrics2183[["rmse"]],"-",tp2183_high_metrics[["rmse"]],van2183_high_metrics[["rmse"]]),
+Low_Season = c("-", low_metrics2183[["rmse"]],tp2183_low_metrics[["rmse"]],van2183_low_metrics[["rmse"]]),
+  Full_Test_Set = c("-", "-", metrics_2183[["rmse"]], model2183_metrics[["rmse"]]),
+  stringsAsFactors = FALSE
+)
+
+print(table_data_2183)
+print(rmse_data_2183)
+```
+
+Visualizing residuals for df_2183
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Filter and compute residuals
+df_filtered <- df_2183 %>%
+  filter(hydr_year > 30) %>%
+  mutate(
+    date = as.Date(date),  # Ensure proper Date type
+    residual = gauge - new_pred,
+    season_type = case_when(
+      seasonal_value_filled > 0.95 ~ "High",
+      seasonal_value_filled < -0.95 ~ "Low",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Step 2: Plot residuals with seasonal highlights
+ggplot(df_filtered, aes(x = date, y = residual)) +
+  # Highlight high/low seasons
+  geom_rect(data = df_filtered %>% filter(!is.na(season_type)),
+            aes(xmin = date - 0.5, xmax = date + 0.5,
+                ymin = -Inf, ymax = Inf, fill = season_type),
+            inherit.aes = FALSE,
+            alpha = 0.2) +
+  # Line and points for residuals
+  geom_line(color = "black") +
+  geom_point(size = 1) +
+  scale_fill_manual(values = c("High" = "red", "Low" = "blue")) +
+  labs(
+    title = "Residuals Over Time (hydr_year > 30) with Seasonal Highlights",
+    x = "Date",
+    y = "Residual (gauge - new_pred)",
+    fill = "Season Type"
+  ) +
+  theme_minimal()
+
+# Histogram with facets for High/Low/Overall
+df_hist <- df_filtered %>%
+  mutate(season_type = ifelse(is.na(season_type), "Overall", season_type))
+
+# Compute mean and sd per group
+stats <- df_hist %>%
+  group_by(season_type) %>%
+  summarise(
+    mean_res = mean(residual, na.rm = TRUE),
+    sd_res   = sd(residual, na.rm = TRUE)
+  )
+
+ggplot(df_hist, aes(x = residual, fill = season_type)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  facet_wrap(~season_type, scales = "free") +   # free x and y
+  scale_fill_manual(values = c("High" = "red", "Low" = "blue", "Overall" = "gray")) +
+  labs(
+    title = "Histograms of Residuals by Season",
+    x = "Residual",
+    y = "Count"
+  ) +
+  # Add mean ± sd as text
+  geom_text(
+    data = stats,
+    aes(
+      x = mean_res, 
+      y = 0,   # bottom of the plot
+      label = paste0("Mean=", round(mean_res, 2), 
+                     "\nSD=", round(sd_res, 2))
+    ),
+    inherit.aes = FALSE,
+    vjust = -0.5,
+    hjust = 0,
+    size = 3.5,
+    color = "black"
+  ) +
+  theme_minimal()
+```
+
+Checking df_2183 metrics with different threshold values (0.95, 0.9, 0.85, 0.8, 0.75)
+
+```{r}
+run_time_pointwise_analysis <- function(df, thresholds = c(0.95, 0.9, 0.85, 0.8, 0.75)) {
+  results_list <- list()
+
+  for (thresh in thresholds) {
+    cat("Processing threshold:", thresh, "\n")
+
+    df_high <- subset(df, seasonal_value_filled >= thresh)
+    df_low <- subset(df, seasonal_value_filled <= -thresh)
+
+    # Train models
+    model_high <- train_model(df_high, "hydr_year", 30)
+    model_low <- train_model(df_low, "hydr_year", 30)
+
+    # Compare models and extract param matrix
+    div_matrix <- compare_models_kld_updated(model_high, model_low, 3)
+    pm <- div_matrix$param_matrix
+
+    # Apply param combinations
+    df_high$params <- lapply(df_high$seasonal_value_norm, function(a) combine_params(pm, alpha = a))
+    df_low$params <- lapply(df_low$seasonal_value_norm, function(a) combine_params(pm, alpha = a))
+
+    # Create SWR objects
+    df_high$swr <- lapply(df_high$params, function(mat) {
+      param <- mat[, c("delta", "sigma"), drop = FALSE]
+      mix <- mat[, "beta"]
+      createSWR(param = param, mix = mix)
+    })
+
+    df_low$swr <- lapply(df_low$params, function(mat) {
+      param <- mat[, c("delta", "sigma"), drop = FALSE]
+      mix <- mat[, "beta"]
+      createSWR(param = param, mix = mix)
+    })
+
+    # Add new predictions
+    df_high <- add_new_predictions(df_high)
+    df_low <- add_new_predictions(df_low)
+
+    # Get test indices and evaluate
+    test_inds_high <- which(df_high$hydr_year > 30)
+    test_inds_low <- which(df_low$hydr_year > 30)
+
+    high_test <- df_high[test_inds_high, ]
+    low_test <- df_low[test_inds_low, ]
+
+    high_metrics <- extract_metrics(eval_all(high_test$new_pred, high_test$gauge))
+    low_metrics <- extract_metrics(eval_all(low_test$new_pred, low_test$gauge))
+
+    # Format results
+    df_high_metrics <- as.data.frame(t(high_metrics))
+    df_low_metrics <- as.data.frame(t(low_metrics))
+
+    colnames(df_high_metrics) <- names(high_metrics)
+    colnames(df_low_metrics) <- names(low_metrics)
+
+    df_high_metrics$Model <- paste0("High Model Time Pointwise ", thresh)
+    df_low_metrics$Model <- paste0("Low Model Time Pointwise ", thresh)
+
+    results_list[[paste0("thresh_", thresh)]] <- rbind(df_high_metrics, df_low_metrics)
+  }
+
+  # Combine all threshold results
+  final_table <- do.call(rbind, results_list)
+  final_table <- final_table[, c("Model", setdiff(names(final_table), "Model"))]
+
+  return(final_table)
+}
+
+metrics_table_thresholds <- run_time_pointwise_analysis(df_2183)
+print(metrics_table_thresholds[c(2,4,6,8,10), ])
+print(metrics_table_thresholds[c(1,3,5,7, 9),])
+```
+
