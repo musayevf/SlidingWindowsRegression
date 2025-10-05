@@ -1,0 +1,18 @@
+#Evaluates and returns model performance metrics for a given dataset and rain condition.
+evaluate_model <- function(model, test_data, dataset_name, rain_status) {
+  preds <- predict(model, newdata = test_data$rain)
+  metrics <- extract_metrics(eval_all(preds, test_data$gauge))  # already a named numeric vector
+  
+  df <- as.data.frame(t(metrics)) # transpose → metrics as columns
+  df$Model <- paste(dataset_name, rain_status)
+  
+  # reorder to put "Model" first
+  df <- df[, c("Model", setdiff(names(df), "Model"))]
+  return(df)
+}
+
+# Function to extract and convert list values to a numeric vector
+extract_metrics <- function(metrics_list) {
+  # Extract values from the list (assuming `metrics_list` contains named elements)
+  return(unlist(metrics_list))
+}
