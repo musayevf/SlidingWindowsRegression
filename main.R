@@ -79,3 +79,115 @@ df_2152 <- spline_interpolation(df_2152, subset(seasons, gridcode == 2152), norm
 df_2183 <- spline_interpolation(df_2183, subset(seasons, gridcode == 2183), normalize_values = TRUE)
 knitr::kable(head(df_1344), caption = "Watershed 1344")
 
+#Dividing datasets into high and low vegetation models (x < -0.95 & x > 0.95)
+df_1344_low <- subset(df_1344, seasonal_value_filled <= -0.95)
+df_1344_high <- subset(df_1344, seasonal_value_filled >= 0.95)
+df_2152_low <- subset(df_2152, seasonal_value_filled <= -0.95)
+df_2152_high <- subset(df_2152, seasonal_value_filled >= 0.95)
+df_2183_low <- subset(df_2183, seasonal_value_filled <= -0.95)
+df_2183_high <- subset(df_2183, seasonal_value_filled >= 0.95)
+
+#Training high and low vegetation models
+model_1344_high <- train_model(df_1344_high, "hydr_year", 30)
+model_1344_low <- train_model(df_1344_low, "hydr_year", 30)
+model_2152_high <- train_model(df_2152_high, "hydr_year", 30)
+model_2152_low <- train_model(df_2152_low, "hydr_year", 30)
+model_2183_high <- train_model(df_2183_high, "hydr_year", 30)
+model_2183_low <- train_model(df_2183_low, "hydr_year", 30)
+
+#Evaluating Models
+high_low_results <- do.call(rbind, list(
+  evaluate_model(model_1344_high, df_1344_high[df_1344_high$hydr_year > 30, ], "1344", "high"),
+  evaluate_model(model_1344_low, df_1344_low[df_1344_low$hydr_year > 30, ], "1344", "low"),
+  evaluate_model(model_2152_high, df_2152_high[df_2152_high$hydr_year > 30, ], "2152", "high"),
+  evaluate_model(model_2152_low, df_2152_low[df_2152_low$hydr_year > 30, ], "2152", "low"),
+  evaluate_model(model_2183_high, df_2183_high[df_2183_high$hydr_year > 30, ], "2183", "high"),
+  evaluate_model(model_2183_low, df_2183_low[df_2183_low$hydr_year > 30, ], "2183", "low")
+))
+knitr::kable(results, caption = "Evaluation Metrics for Low and High Models")
+plot(model_1344_high, #Visualizing example model
+     type = "prediction",
+     reference = df_1344_high[df_1344_high$hydr_year > 30, ]$gauge,
+     newdata = df_1344_high[df_1344_high$hydr_year > 30, ]$rain)
+
+#Continuing with Combining Models according to KD Similarity
+divergence_matrix_1344 <- compare_models_kld(model_1344_high, model_1344_low, 3)
+divergence_matrix_2152 <- compare_models_kld(model_2152_high, model_2152_low, 3)
+divergence_matrix_2183 <- compare_models_kld(model_2183_high, model_2183_low, 3)
+
+# for each alpha in df_high$seasonal_value_norm, compute and store the matrix for df_high
+df_1344_high$params <- lapply(df_1344_high$seasonal_value_norm,
+                              function(a) combine_params(divergence_matrix_1344$param_matrix, alpha = a))
+df_2152_high$params <- lapply(df_2152_high$seasonal_value_norm,
+                              function(a) combine_params(divergence_matrix_2152$param_matrix, alpha = a))
+df_2183_high$params <- lapply(df_2183_high$seasonal_value_norm,
+                              function(a) combine_params(divergence_matrix_2183$param_matrix, alpha = a))
+
+# for each alpha in df_low$seasonal_value_norm, compute and store the matrix for df_low
+df_1344_low$params <- lapply(df_1344_low$seasonal_value_norm,
+                             function(a) combine_params(divergence_matrix_1344$param_matrix, alpha = a))
+df_2152_low$params <- lapply(df_2152_low$seasonal_value_norm,
+                             function(a) combine_params(divergence_matrix_2152$param_matrix, alpha = a))
+df_2183_low$params <- lapply(df_2183_low$seasonal_value_norm,
+                             function(a) combine_params(divergence_matrix_2183$param_matrix, alpha = a))
+
+# Adding SWR() objects as new columns, assume df_high$params is your list-column of delta/sigma/beta matrices
+df_1344_high$swr <- lapply(df_1344_high$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_2152_high$swr <- lapply(df_2152_high$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_2183_high$swr <- lapply(df_2183_high$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_1344_low$swr <- lapply(df_1344_low$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_2152_low$swr <- lapply(df_2152_low$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+df_2183_low$swr <- lapply(df_2183_low$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)
+})
+
+#Adding new predictions using SWR() objects
+df_1344_high <- add_new_predictions(df_1344_high)
+df_2152_high <- add_new_predictions(df_2152_high)
+df_2183_high <- add_new_predictions(df_2183_high)
+df_1344_low <- add_new_predictions(df_1344_low)
+df_2152_low <- add_new_predictions(df_2152_low)
+df_2183_low <- add_new_predictions(df_2183_low)
+
+#Evaluating New Predictions
+high_low_results <- do.call(rbind, list(
+  extract_metrics(eval_all(high_test$new_pred, high_test$gauge)),
+  evaluate_model(model_1344_low, df_1344_low[df_1344_low$hydr_year > 30, ], "1344", "low"),
+  evaluate_model(model_2152_high, df_2152_high[df_2152_high$hydr_year > 30, ], "2152", "high"),
+  evaluate_model(model_2152_low, df_2152_low[df_2152_low$hydr_year > 30, ], "2152", "low"),
+  evaluate_model(model_2183_high, df_2183_high[df_2183_high$hydr_year > 30, ], "2183", "high"),
+  evaluate_model(model_2183_low, df_2183_low[df_2183_low$hydr_year > 30, ], "2183", "low")
+))

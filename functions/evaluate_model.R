@@ -1,3 +1,14 @@
+#Trains model upon selected criteria
+train_model <- function(data, filter_col, threshold, iter = 3, param_selection = "best_bic") {
+  # Get indices where filter_col <= threshold
+  train_inds <- which(data[[filter_col]] <= threshold)
+  
+  # Train the model
+  model <- trainSWR(data$rain[train_inds], data$gauge[train_inds], 
+                    iter = iter, param_selection = param_selection)
+  return(model)
+}
+
 #Evaluates and returns model performance metrics for a given dataset and rain condition.
 evaluate_model <- function(model, test_data, dataset_name, rain_status) {
   preds <- predict(model, newdata = test_data$rain)
