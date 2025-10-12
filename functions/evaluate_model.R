@@ -27,3 +27,20 @@ extract_metrics <- function(metrics_list) {
   # Extract values from the list (assuming `metrics_list` contains named elements)
   return(unlist(metrics_list))
 }
+
+#New function to evaluate between new_pred and gauge values
+new_evaluate_model <- function(df, model_name) {
+  # Filter data
+  df_sub <- df[df$hydr_year > 30, ]
+  
+  # Evaluate predictions
+  metrics <- extract_metrics(eval_all(df_sub$new_pred, df_sub$gauge))
+  
+  # Ensure metrics are one row
+  metrics_df <- as.data.frame(t(metrics))
+  
+  # Add model name as first column
+  metrics_df <- cbind(model = model_name, metrics_df)
+  
+  return(metrics_df)
+}

@@ -184,10 +184,89 @@ df_2183_low <- add_new_predictions(df_2183_low)
 
 #Evaluating New Predictions
 high_low_results <- do.call(rbind, list(
-  extract_metrics(eval_all(high_test$new_pred, high_test$gauge)),
-  evaluate_model(model_1344_low, df_1344_low[df_1344_low$hydr_year > 30, ], "1344", "low"),
-  evaluate_model(model_2152_high, df_2152_high[df_2152_high$hydr_year > 30, ], "2152", "high"),
-  evaluate_model(model_2152_low, df_2152_low[df_2152_low$hydr_year > 30, ], "2152", "low"),
-  evaluate_model(model_2183_high, df_2183_high[df_2183_high$hydr_year > 30, ], "2183", "high"),
-  evaluate_model(model_2183_low, df_2183_low[df_2183_low$hydr_year > 30, ], "2183", "low")
+  new_evaluate_model(df_1344_high, "1344_high"),
+  new_evaluate_model(df_1344_low,  "1344_low"),
+  new_evaluate_model(df_2152_high, "2152_high"),
+  new_evaluate_model(df_2152_low,  "2152_low"),
+  new_evaluate_model(df_2183_high, "2183_high"),
+  new_evaluate_model(df_2183_low,  "2183_low")
 ))
+knitr::kable(high_low_results, caption = "Evaluation Metrics for Low and High Models Trained on SWR() Kernels")
+
+#Training Vanilla Models
+model_1344 <- trainSWR(df_1344[df_1344$hydr_year <= 30, ]$rain,
+                       df_1344[df_1344$hydr_year <= 30, ]$gauge,
+                       iter = 3, param_selection = "best_bic")
+pred_1344 <- predict(model_1344, newdata = df_1344[df_1344$hydr_year > 30, ]$rain)
+
+model_2152 <- trainSWR(df_2152[df_2152$hydr_year <= 30, ]$rain,
+                       df_2152[df_2152$hydr_year <= 30, ]$gauge,
+                       iter = 3, param_selection = "best_bic")
+pred_2152 <- predict(model_2152, newdata = df_2152[df_2152$hydr_year > 30, ]$rain)
+
+model_2183 <- trainSWR(df_2183[df_2183$hydr_year <= 30, ]$rain,
+                       df_2183[df_2183$hydr_year <= 30, ]$gauge,
+                       iter = 3, param_selection = "best_bic")
+pred_2183 <- predict(model_2183, newdata = df_2183[df_2183$hydr_year > 30, ]$rain)
+
+#Training SWR() Models for whole dataset
+df_1344$params <- lapply(df_1344$seasonal_value_norm,
+                        function(a) combine_params(divergence_matrix_1344$param_matrix, alpha = a))
+df_2152$params <- lapply(df_2152$seasonal_value_norm,
+                         function(a) combine_params(divergence_matrix_2152$param_matrix, alpha = a))
+df_2183$params <- lapply(df_2183$seasonal_value_norm,
+                         function(a) combine_params(divergence_matrix_2183$param_matrix, alpha = a))
+
+#creating swr objects from parameters of the datasets
+df_1344$swr <- lapply(df_1344$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)})
+df_2152$swr <- lapply(df_2152$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)})
+df_2183$swr <- lapply(df_2183$params, function(mat) {
+  # mat is the param-matrix for one row, with columns delta, sigma, beta
+  param <- mat[, c("delta", "sigma"), drop = FALSE]
+  mix   <- mat[, "beta"]
+  createSWR(param = param, mix = mix)})
+
+#Adding new predictions
+df_1344 <- add_new_predictions(df_1344)
+df_2152 <- add_new_predictions(df_2152)
+df_2183 <- add_new_predictions(df_2183)
+
+#Collecting Metrics for both Vanilla and Combined Models
+test_1344 <- subset(df_1344, hydr_year > 30)
+metrics_1344 <- extract_metrics(eval_all(test_1344$new_pred, test_1344$gauge))
+test_2152 <- subset(df_2152, hydr_year > 30)
+metrics_2152 <- extract_metrics(eval_all(test_2152$new_pred, test_2152$gauge))
+test_2183 <- subset(df_2183, hydr_year > 30)
+metrics_2183 <- extract_metrics(eval_all(test_2183$new_pred, test_2183$gauge))
+#Combined Models Metrics
+model_1344_metrics <- extract_metrics(eval_all(pred_1344, test_1344$gauge))
+model_2152_metrics <- extract_metrics(eval_all(pred_2152, test_2152$gauge))
+model_2183_metrics <- extract_metrics(eval_all(pred_2183, test_2183$gauge))
+
+#Displaying Model Metrics
+#Evaluating New Predictions
+# List of variable names
+model_vars <- c("metrics_1344", "model_1344_metrics","metrics_2152",
+                "model_2152_metrics","metrics_2183", "model_2183_metrics")
+model_names <- c("Vanilla 1344", "Combined 1344", "Vanilla 2152", 
+                 "Combined 2152", "Vanilla 2183", "Combined 2183")
+
+# Build data frame for each and combine
+vanilla_combined <- do.call(rbind, lapply(seq_along(model_vars), function(i) {
+  metrics <- get(model_vars[i])  # get the variable by name
+  data.frame(model = model_names[i], t(metrics), check.names = FALSE)
+}))
+knitr::kable(vanilla_combined, caption = "Comparison of Vanilla and Combined Models")
+
+#Combining all metrics tables together (high, low, combined, vanilla)
+names(high_low_results)[names(high_low_results) == "Model"] <- "model"
+final_results <- cbind(vanilla_combined, high_low_results)
+knitr::kable(final_results, caption = "High, Low, Combined and Vanilla Models")
