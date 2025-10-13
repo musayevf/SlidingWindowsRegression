@@ -270,3 +270,7 @@ knitr::kable(vanilla_combined, caption = "Comparison of Vanilla and Combined Mod
 names(high_low_results)[names(high_low_results) == "Model"] <- "model"
 final_results <- cbind(vanilla_combined, high_low_results)
 knitr::kable(final_results, caption = "High, Low, Combined and Vanilla Models")
+
+#Visualizing results
+analyze_residuals(df_1344)
+

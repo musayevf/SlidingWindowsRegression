@@ -225,3 +225,80 @@ add_new_predictions <- function(df_high) {
   df_high$new_pred <- new_pred
   return(df_high)
 }
+
+#Plots residuals for new predicted values of the dataframe
+analyze_residuals <- function(df) {
+  # Step 1: Filter and compute residuals
+  df_filtered <- df %>%
+    filter(hydr_year > 30) %>%
+    mutate(
+      date = as.Date(date),
+      residual = gauge - new_pred,
+      season_type = case_when(
+        seasonal_value_filled > 0.95 ~ "High",
+        seasonal_value_filled < -0.95 ~ "Low",
+        TRUE ~ NA_character_
+      )
+    )
+  
+  # --- Plot 1: Residuals Over Time ---
+  p1 <- ggplot(df_filtered, aes(x = date, y = residual)) +
+    geom_rect(data = df_filtered %>% filter(!is.na(season_type)),
+              aes(xmin = date - 0.5, xmax = date + 0.5,
+                  ymin = -Inf, ymax = Inf, fill = season_type),
+              inherit.aes = FALSE,
+              alpha = 0.2) +
+    geom_line(color = "black") +
+    geom_point(size = 1) +
+    scale_fill_manual(values = c("High" = "red", "Low" = "blue")) +
+    labs(
+      title = "Residuals Over Time (hydr_year > 30) with Seasonal Highlights",
+      x = "Date",
+      y = "Residual (gauge - new_pred)",
+      fill = "Season Type"
+    ) +
+    theme_minimal()
+  
+  print(p1)
+  
+  # --- Step 2: Histogram by Season Type ---
+  df_hist <- df_filtered %>%
+    mutate(season_type = ifelse(is.na(season_type), "Overall", season_type))
+  
+  stats <- df_hist %>%
+    group_by(season_type) %>%
+    summarise(
+      mean_res = mean(residual, na.rm = TRUE),
+      sd_res   = sd(residual, na.rm = TRUE)
+    )
+  
+  p2 <- ggplot(df_hist, aes(x = residual, fill = season_type)) +
+    geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+    facet_wrap(~season_type, scales = "free") +
+    scale_fill_manual(values = c("High" = "red", "Low" = "blue", "Overall" = "gray")) +
+    labs(
+      title = "Histograms of Residuals by Season",
+      x = "Residual",
+      y = "Count"
+    ) +
+    geom_text(
+      data = stats,
+      aes(
+        x = mean_res,
+        y = 0,
+        label = paste0("Mean=", round(mean_res, 2),
+                       "\nSD=", round(sd_res, 2))
+      ),
+      inherit.aes = FALSE,
+      vjust = -0.5,
+      hjust = 0,
+      size = 3.5,
+      color = "black"
+    ) +
+    theme_minimal()
+  
+  print(p2)
+  
+  # Optionally return both plots for further use
+  invisible(list(residual_plot = p1, histogram_plot = p2))
+}
