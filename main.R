@@ -273,4 +273,42 @@ knitr::kable(final_results, caption = "High, Low, Combined and Vanilla Models")
 
 #Visualizing results
 analyze_residuals(df_1344)
+#compare of percentage of increase in metrics, mean absolute error / actual value -> mape, 
+#add double tables for low, high, whole data
 
+#Evaluating High/Low Models with Whole Dataset
+high_low_whole_sets <- do.call(rbind, list(
+  evaluate_model(model_1344_high, df_1344[df_1344$hydr_year > 30, ], "1344", "high"),
+  evaluate_model(model_1344_low, df_1344[df_1344$hydr_year > 30, ], "1344", "low"),
+  evaluate_model(model_2152_high, df_2152[df_2152$hydr_year > 30, ], "2152", "high"),
+  evaluate_model(model_2152_low, df_2152[df_2152$hydr_year > 30, ], "2152", "low"),
+  evaluate_model(model_2183_high, df_2183[df_2183$hydr_year > 30, ], "2183", "high"),
+  evaluate_model(model_2183_low, df_2183[df_2183$hydr_year > 30, ], "2183", "low")
+))
+knitr::kable(high_low_whole_sets, caption = "Evaluation Metrics of Whole Dataset for Low and High Models")
+
+#Evaluating Whole Model Performance on High and Low Datasets
+test_datasets <- list(
+  "1344" = test_1344,
+  "2152" = test_2152,
+  "2183" = test_2183
+)
+
+# Loop through datasets and compute metrics for high/low seasons
+all_metrics <- lapply(names(test_datasets), function(name) {
+  df <- test_datasets[[name]]
+  
+  low <- subset(df, seasonal_value_filled < -0.95)
+  high <- subset(df, seasonal_value_filled > 0.95)
+  
+  low_metrics <- compute_metrics(low, name, "Low")
+  high_metrics <- compute_metrics(high, name, "High")
+  
+  rbind(low_metrics, high_metrics)
+})
+
+# Combine all results into one dataframe
+whole_model_metrics_df <- bind_rows(all_metrics)
+
+# Print results nicely
+knitr::kable(whole_model_metrics_df, caption = "Model Performance by Season and Dataset")

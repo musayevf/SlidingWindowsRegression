@@ -302,3 +302,17 @@ analyze_residuals <- function(df) {
   # Optionally return both plots for further use
   invisible(list(residual_plot = p1, histogram_plot = p2))
 }
+
+# Helper function: safely convert metrics to data frame + add dataset info
+compute_metrics <- function(df, dataset_name, season_label) {
+  metrics_vec <- extract_metrics(eval_all(df$new_pred, df$gauge))
+  
+  # Convert to 1-row data frame
+  metrics_df <- as.data.frame(t(unlist(metrics_vec)))
+  
+  # Add metadata
+  metrics_df$dataset <- dataset_name
+  metrics_df$season <- season_label
+  
+  return(metrics_df)
+}
