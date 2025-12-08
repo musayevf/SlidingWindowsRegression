@@ -272,7 +272,7 @@ final_results <- cbind(vanilla_combined, high_low_results)
 knitr::kable(final_results, caption = "High, Low, Combined and Vanilla Models")
 
 #Visualizing results
-analyze_residuals(df_1344)
+analyze_residuals(df_2183)
 #compare of percentage of increase in metrics, mean absolute error / actual value -> mape, 
 #add double tables for low, high, whole data
 
